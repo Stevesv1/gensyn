@@ -48,8 +48,12 @@ screen -S gensyn
 ```bash
 python3 -m venv .venv && . .venv/bin/activate && ./run_rl_swarm.sh
 ```
-7. **Forward ssh port**
-- Keep the rl-swarm running, in the meantime, open command prompt and use this command
+- It will ask some questions, you should send response properly
+- ```Would you like to connect to the Testnet? [Y/n]``` : Write `Y`
+- ```Would you like to push models you train in the RL swarm to the Hugging Face Hub? [y/N]``` : Write `N`
+- When you will see interface like this, you can detach from this screen session
 
-6. **Detach from `screen session`**
+![Screenshot 2025-04-01 061641](https://github.com/user-attachments/assets/08746806-97fd-43f5-8440-d3962a712031)
+
+7. **Detach from `screen session`**
 - Use `Ctrl + A` and then press `D` to detach from this screen session.

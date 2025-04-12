@@ -1,442 +1,295 @@
 #!/bin/bash
 
-ROOT=$PWD
+# Color codes for echo messages
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+PURPLE='\033[1;35m'
+NC='\033[0m' # No Color
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-PURPLE='\033[0;95m'
-BLUE='\033[0;94m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-print_step() {
-    echo -e "\n${CYAN}${BOLD}Step $1: $2${NC}"
+# Function to print colorful messages
+print_message() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-check_success() {
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Success!${NC}"
-    else
-        echo -e "${RED}✗ Failed! Please check errors above and try again.${NC}"
-        exit 1
-    fi
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-# Export environment variables
-export PUB_MULTI_ADDRS
-export PEER_MULTI_ADDRS
-export HOST_MULTI_ADDRS
-export IDENTITY_PATH
-export ORG_ID
-export HF_HUB_DOWNLOAD_TIMEOUT=120
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-# Set default values for environment variables if not already defined
-DEFAULT_PUB_MULTI_ADDRS=""
-PUB_MULTI_ADDRS=${PUB_MULTI_ADDRS:-$DEFAULT_PUB_MULTI_ADDRS}
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-DEFAULT_PEER_MULTI_ADDRS="/ip4/38.101.215.13/tcp/30002/p2p/QmQ2gEXoPJg6iMBSUFWGzAabS2VhnzuS782Y637hGjfsRJ"
-PEER_MULTI_ADDRS=${PEER_MULTI_ADDRS:-$DEFAULT_PEER_MULTI_ADDRS}
+print_header() {
+    echo -e "${PURPLE}====== $1 ======${NC}"
+}
 
-DEFAULT_HOST_MULTI_ADDRS="/ip4/0.0.0.0/tcp/38331"
-HOST_MULTI_ADDRS=${HOST_MULTI_ADDRS:-$DEFAULT_HOST_MULTI_ADDRS}
+# Step 1: Check if we're in rl-swarm directory
+print_header "CHECKING RL-SWARM DIRECTORY"
 
-DEFAULT_IDENTITY_PATH="$ROOT"/swarm.pem
-IDENTITY_PATH=${IDENTITY_PATH:-$DEFAULT_IDENTITY_PATH}
-
-# Check if running in WSL
-IS_WSL=false
-if grep -q Microsoft /proc/version 2>/dev/null || grep -q microsoft /proc/version 2>/dev/null; then
-    IS_WSL=true
-    echo -e "${BLUE}Detected Windows Subsystem for Linux (WSL) environment${NC}"
-fi
-
-if [ -f "modal-login/temp-data/userData.json" ]; then
-    cd modal-login
-    source ~/.bashrc
-
-    # Install npm if not present
-    if ! command -v npm >/dev/null 2>&1; then
-        echo -e "${YELLOW}npm is not installed. Installing Node.js and npm...${NC}"
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        source ~/.bashrc
-    fi
-
-    echo -e "\n${CYAN}Installing dependencies with npm. This may take a few minutes, depending on your internet speed...${NC}"
-    npm install --legacy-peer-deps
-
-    # Start the development server in the background
-    echo -e "\n${CYAN}Starting the development server...${NC}"
-    npm run dev > server.log 2>&1 &
-    SERVER_PID=$!
-    MAX_WAIT=60
-    counter=0
-    while [ $counter -lt $MAX_WAIT ]; do
-        if grep -q "Local:        http://localhost:" server.log; then
-            PORT=$(grep "Local:        http://localhost:" server.log | sed -n 's/.*http:\/\/localhost:\([0-9]*\).*/\1/p')
-            if [ -n "$PORT" ]; then
-                echo -e "${GREEN}Server is running successfully on port $PORT\n${NC}"
-                break
-            fi
-        fi
-        sleep 1
-        counter=$((counter + 1))
-    done
-
-    if [ $counter -eq $MAX_WAIT ]; then
-        echo -e "${RED}Timeout waiting for server to start.${NC}"
-        kill $SERVER_PID 2>/dev/null || true
-        exit 1
-    fi
-    cd ..
-
-    # Extract ORG_ID from userData.json
-    ORG_ID=$(awk 'BEGIN { FS = "\"" } !/^[ \t]*[{}]/ { print $(NF - 1); exit }' modal-login/temp-data/userData.json)
-    echo -e "${CYAN}ORG_ID has been set to: ${BOLD}$ORG_ID\n${NC}"
-
-    # Cleanup function for graceful shutdown
-    cleanup() {
-        echo -e "${YELLOW}Shutting down server and ngrok...${NC}"
-        kill $SERVER_PID 2>/dev/null || true
-        exit 0
-    }
-
-    trap cleanup INT
+if [[ $(basename "$PWD") == "rl-swarm" ]]; then
+    print_success "Currently in rl-swarm directory."
+    RL_SWARM_DIR="$PWD"
+else
+    print_warning "Not in rl-swarm directory. Checking HOME directory..."
     
-else
-    cd modal-login
-    source ~/.bashrc
-    if ! command -v npm >/dev/null 2>&1; then
-        echo -e "${YELLOW}npm is not installed. Installing Node.js and npm...${NC}"
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        source ~/.bashrc
-    fi
-    echo -e "\n${CYAN}Installing dependencies with npm. This may take a few minutes, depending on your internet speed...${NC}"
-    npm install --legacy-peer-deps
-
-    # Start the development server in the background
-    echo -e "\n${CYAN}Starting the development server...${NC}"
-    npm run dev > server.log 2>&1 &
-    SERVER_PID=$!
-    MAX_WAIT=60
-    counter=0
-    while [ $counter -lt $MAX_WAIT ]; do
-        if grep -q "Local:        http://localhost:" server.log; then
-            PORT=$(grep "Local:        http://localhost:" server.log | sed -n 's/.*http:\/\/localhost:\([0-9]*\).*/\1/p')
-            if [ -n "$PORT" ]; then
-                echo -e "${GREEN}Server is running successfully on port $PORT.${NC}"
-                break
-            fi
-        fi
-        sleep 1
-        counter=$((counter + 1))
-    done
-
-    if [ $counter -eq $MAX_WAIT ]; then
-        echo -e "${RED}Timeout waiting for server to start.${NC}"
-        kill $SERVER_PID 2>/dev/null || true
-        exit 1
-    fi
-
-    print_step 1 "Detecting system architecture"
-    ARCH=$(uname -m)
-    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-    if [ "$ARCH" = "x86_64" ]; then
-        NGROK_ARCH="amd64"
-        echo -e "${GREEN}Detected x86_64 architecture.${NC}"
-    elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
-        NGROK_ARCH="arm64"
-        echo -e "${GREEN}Detected ARM64 architecture.${NC}"
-    elif [[ "$ARCH" == arm* ]]; then
-        NGROK_ARCH="arm"
-        echo -e "${GREEN}Detected ARM architecture.${NC}"
+    # Step 2: Check if rl-swarm directory exists in HOME
+    if [[ -d "$HOME/rl-swarm" ]]; then
+        print_success "Found rl-swarm directory in HOME."
+        RL_SWARM_DIR="$HOME/rl-swarm"
     else
-        echo -e "${RED}Unsupported architecture: $ARCH. Please use a supported system.${NC}"
+        print_error "rl-swarm directory not found in current directory or HOME."
         exit 1
     fi
+fi
 
-    print_step 2 "Downloading and installing ngrok"
-    echo -e "${YELLOW}Downloading ngrok for $OS-$NGROK_ARCH...${NC}"
-    wget -q --show-progress "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-$OS-$NGROK_ARCH.tgz"
-    check_success
+# Step 3: Navigate to rl-swarm directory
+print_message "Navigating to $RL_SWARM_DIR"
+cd "$RL_SWARM_DIR"
+print_success "Successfully navigated to rl-swarm directory."
 
-    echo -e "${YELLOW}Extracting ngrok...${NC}"
-    tar -xzf "ngrok-v3-stable-$OS-$NGROK_ARCH.tgz"
-    check_success
+# Step 4: Check for cloudflared installation
+print_header "CHECKING CLOUDFLARED"
 
-    echo -e "${YELLOW}Moving ngrok to /usr/local/bin/ (requires sudo)...${NC}"
-    sudo mv ngrok /usr/local/bin/
-    check_success
+# Detect architecture
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64)
+        CLOUDFLARED_ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        CLOUDFLARED_ARCH="arm64"
+        ;;
+    *)
+        print_error "Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
 
-    echo -e "${YELLOW}Cleaning up temporary files...${NC}"
-    rm "ngrok-v3-stable-$OS-$NGROK_ARCH.tgz"
-    check_success
-
-    print_step 3 "Authenticating ngrok"
-    while true; do
-        echo -e "\n${YELLOW}To get your authtoken:${NC}"
-        echo "1. Sign up or log in at https://dashboard.ngrok.com"
-        echo "2. Go to 'Your Authtoken' section: https://dashboard.ngrok.com/get-started/your-authtoken"
-        echo "3. Click on the eye icon to reveal your ngrok auth token"
-        echo "4. Copy that auth token and paste it in the prompt below"
-        echo -e "\n${BOLD}Please enter your ngrok authtoken:${NC}"
-        read -p "> " NGROK_TOKEN
-
-        if [ -z "$NGROK_TOKEN" ]; then
-            echo -e "${RED}No token provided. Please enter a valid token.${NC}"
-            continue
-        fi
-
-        # Ensure any previous ngrok processes are killed before authentication
-        sudo pkill -f ngrok || true
-        sleep 2
-
-        sudo ngrok authtoken "$NGROK_TOKEN"
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Successfully authenticated ngrok!${NC}"
-            break
-        else
-            echo -e "${RED}✗ Authentication failed. Please check your token and try again.${NC}"
-        fi
-    done
-
-    print_step 4 "Preparing for ngrok tunnel"
-    # Kill any existing ngrok processes
-    sudo pkill -f ngrok || true
-    sleep 3
-
-    # Find available ports for ngrok web interface
-    NGROK_WEB_PORT=4040
-    while sudo lsof -i :$NGROK_WEB_PORT >/dev/null 2>&1; do
-        echo -e "${YELLOW}Port $NGROK_WEB_PORT is in use. Trying next port...${NC}"
-        NGROK_WEB_PORT=$((NGROK_WEB_PORT + 1))
-    done
-    echo -e "${GREEN}Will use port $NGROK_WEB_PORT for ngrok web interface.${NC}"
-
-    print_step 5 "Starting ngrok tunnel on port $PORT"
-
-    if [ "$IS_WSL" = true ]; then
-        # WSL-specific method for running ngrok
-        echo -e "${BLUE}Using WSL-specific method for ngrok...${NC}"
+if command -v cloudflared &> /dev/null; then
+    print_success "cloudflared is already installed."
+else
+    print_message "Installing cloudflared for $ARCH architecture..."
+    
+    # Create temporary directory for download
+    mkdir -p /tmp/cloudflared-install
+    cd /tmp/cloudflared-install
+    
+    # Download and install cloudflared based on the OS and architecture
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux installation
+        curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CLOUDFLARED_ARCH}.deb" -o cloudflared.deb
+        sudo dpkg -i cloudflared.deb || sudo apt-get install -f -y
         
-        # Direct approach for WSL
-        sudo ngrok http $PORT --log=stdout > /dev/null 2>&1 &
-        NGROK_PID=$!
+        # If dpkg/apt fails, try direct binary installation
+        if ! command -v cloudflared &> /dev/null; then
+            curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CLOUDFLARED_ARCH}" -o cloudflared
+            chmod +x cloudflared
+            sudo mv cloudflared /usr/local/bin/
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS installation
+        if command -v brew &> /dev/null; then
+            brew install cloudflared
+        else
+            curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-${CLOUDFLARED_ARCH}.tgz" -o cloudflared.tgz
+            tar -xzf cloudflared.tgz
+            chmod +x cloudflared
+            sudo mv cloudflared /usr/local/bin/
+        fi
+    else
+        print_error "Unsupported operating system: $OSTYPE"
+        exit 1
+    fi
+    
+    # Navigate back to rl-swarm directory
+    cd "$RL_SWARM_DIR"
+    
+    # Verify installation
+    if command -v cloudflared &> /dev/null; then
+        print_success "cloudflared installation completed successfully."
+    else
+        print_error "Failed to install cloudflared. Please install it manually."
+        exit 1
+    fi
+fi
+
+# Step 5: Check for python3 installation
+print_header "CHECKING PYTHON3"
+
+if command -v python3 &> /dev/null; then
+    print_success "python3 is already installed."
+else
+    print_message "Installing python3..."
+    
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        if command -v brew &> /dev/null; then
+            brew install python
+        else
+            print_error "Homebrew not found. Please install python3 manually."
+            exit 1
+        fi
+    else
+        print_error "Unsupported operating system: $OSTYPE"
+        exit 1
+    fi
+    
+    if command -v python3 &> /dev/null; then
+        print_success "python3 installation completed successfully."
+    else
+        print_error "Failed to install python3. Please install it manually."
+        exit 1
+    fi
+fi
+
+# Step 6: Run HTTP server on port 8000 or next available port
+print_header "STARTING HTTP SERVER"
+
+PORT=8000
+MAX_RETRIES=10
+RETRY_COUNT=0
+SERVER_STARTED=false
+
+# Function to check if port is in use
+is_port_in_use() {
+    if command -v nc &> /dev/null; then
+        nc -z localhost "$1" &> /dev/null
+        return $?
+    elif command -v lsof &> /dev/null; then
+        lsof -i:"$1" &> /dev/null
+        return $?
+    else
+        # Fallback method using a temporary socket
+        (echo > /dev/tcp/127.0.0.1/"$1") &> /dev/null
+        return $?
+    fi
+}
+
+# Function to start the HTTP server
+start_http_server() {
+    local port="$1"
+    local temp_log="/tmp/http_server_$$.log"
+    
+    # Use python's built-in HTTP server
+    python3 -m http.server "$port" > "$temp_log" 2>&1 &
+    local pid=$!
+    
+    # Wait a moment to see if the server starts
+    sleep 2
+    
+    # Check if the process is still running and didn't exit with an error
+    if ps -p $pid > /dev/null; then
+        print_success "HTTP server started successfully on port $port."
+        echo "$pid" # Return the PID
+    else
+        # Check the log for errors
+        if grep -q "Address already in use" "$temp_log"; then
+            print_warning "Port $port is already in use."
+            return 1
+        else
+            print_error "Failed to start HTTP server on port $port. Error log:"
+            cat "$temp_log"
+            return 1
+        fi
+    fi
+}
+
+while [[ $RETRY_COUNT -lt $MAX_RETRIES && $SERVER_STARTED == false ]]; do
+    print_message "Attempting to start HTTP server on port $PORT..."
+    
+    # Check if the port is in use before trying to start the server
+    if is_port_in_use "$PORT"; then
+        print_warning "Port $PORT is already in use. Trying next port."
+        PORT=$((PORT + 1))
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        continue
+    fi
+    
+    # Try to start the HTTP server
+    HTTP_SERVER_PID=$(start_http_server "$PORT")
+    
+    if [[ -n "$HTTP_SERVER_PID" ]]; then
+        # Start cloudflared tunnel in the background
+        print_message "Starting cloudflared tunnel to http://localhost:$PORT..."
+        
+        # Start the tunnel and capture its output
+        cloudflared tunnel --url "http://localhost:$PORT" > /tmp/cloudflared_$$.log 2>&1 &
+        CLOUDFLARED_PID=$!
+        
+        # Wait a moment for the tunnel to establish
         sleep 5
         
-        # Try to get URL directly from API (more reliable in WSL)
-        for check_port in $(seq 4040 4050); do
-            if curl -s "http://localhost:$check_port/api/tunnels" >/dev/null 2>&1; then
-                FORWARDING_URL=$(curl -s "http://localhost:$check_port/api/tunnels" | grep -o '"public_url":"https://[^"]*' | head -n1 | cut -d'"' -f4)
-                if [ -n "$FORWARDING_URL" ]; then
-                    break
-                fi
-            fi
-        done
+        # Extract the tunnel URL from the log file
+        TUNNEL_URL=$(grep -o 'https://[^ ]*\.trycloudflare\.com' /tmp/cloudflared_$$.log | head -n 1)
         
-        # If that fails, try more direct approach
-        if [ -z "$FORWARDING_URL" ]; then
-            # Kill previous process and try again with different options
-            sudo kill $NGROK_PID 2>/dev/null || true
-            sleep 2
+        if [[ -n "$TUNNEL_URL" ]]; then
+            print_success "Cloudflare tunnel established at: $TUNNEL_URL"
             
-            # Try with explicit region and output capture
-            sudo ngrok http --region us $PORT > ngrok_wsl.log 2>&1 &
-            NGROK_PID=$!
-            sleep 8
+            # Step 7: Show download instructions
+            print_header "DOWNLOAD INSTRUCTIONS"
+            echo -e "${GREEN}Download your swarm.pem file using this command:${NC}"
+            echo -e "wget -O swarm.pem ${TUNNEL_URL}/swarm.pem"
+            echo
+            echo -e "${GREEN}Similar for these 2 files as well:${NC}"
+            echo -e "wget -O userData.json ${TUNNEL_URL}/modal-login/temp-data/userData.json"
+            echo -e "wget -O userApiKey.json ${TUNNEL_URL}/modal-login/temp-data/userApiKey.json"
             
-            # Check if tunnel is in the log
-            FORWARDING_URL=$(grep -o "https://.*\.ngrok\.io" ngrok_wsl.log 2>/dev/null | head -n1)
+            SERVER_STARTED=true
+        else
+            print_warning "Cloudflared tunnel not established yet. Waiting longer..."
             
-            # If still empty, try API again
-            if [ -z "$FORWARDING_URL" ]; then
-                for check_port in $(seq 4040 4050); do
-                    if curl -s "http://localhost:$check_port/api/tunnels" >/dev/null 2>&1; then
-                        FORWARDING_URL=$(curl -s "http://localhost:$check_port/api/tunnels" | grep -o '"public_url":"https://[^"]*' | head -n1 | cut -d'"' -f4)
-                        if [ -n "$FORWARDING_URL" ]; then
-                            break
-                        fi
-                    fi
-                done
-            fi
-        fi
-    else
-        # Standard methods for non-WSL environments
-        get_url_from_method1() {
-            # Method 1: JSON log parsing
-            local url=$(grep -o '"url":"https://[^"]*' ngrok_output.log 2>/dev/null | head -n1 | cut -d'"' -f4)
-            echo "$url"
-        }
-
-        get_url_from_method2() {
-            # Method 2: API approach with web interface port
-            local url=""
-            for try_port in $(seq $NGROK_WEB_PORT $((NGROK_WEB_PORT + 5))); do
-                if curl -s "http://localhost:$try_port/api/tunnels" >/dev/null 2>&1; then
-                    url=$(curl -s "http://localhost:$try_port/api/tunnels" | grep -o '"public_url":"https://[^"]*' | head -n1 | cut -d'"' -f4)
-                    if [ -n "$url" ]; then
-                        break
-                    fi
-                fi
-            done
-            echo "$url"
-        }
-
-        get_url_from_method3() {
-            # Method 3: Old-style output parsing
-            local url=$(grep -m 1 "Forwarding" ngrok_output.log 2>/dev/null | grep -o "https://[^ ]*")
-            echo "$url"
-        }
-
-        get_url_from_method4() {
-            # Method 4: Alternative approach with explicit region  
-            # Kill existing ngrok process and restart with explicit settings
-            sudo kill $NGROK_PID 2>/dev/null || true
-            sleep 3
-            
-            sudo ngrok http --region us --log=stdout "$PORT" > ngrok_output_alt.log 2>&1 &
-            NGROK_PID=$!
-            
+            # Wait a bit longer and try again
             sleep 10
+            TUNNEL_URL=$(grep -o 'https://[^ ]*\.trycloudflare\.com' /tmp/cloudflared_$$.log | head -n 1)
             
-            # Try to extract URL from alternative log
-            local url=$(grep -o '"url":"https://[^"]*' ngrok_output_alt.log 2>/dev/null | head -n1 | cut -d'"' -f4)
-            
-            # If that fails, try API on multiple ports
-            if [ -z "$url" ]; then
-                for check_port in $(seq 4040 4050); do
-                    if curl -s "http://localhost:$check_port/api/tunnels" >/dev/null 2>&1; then
-                        url=$(curl -s "http://localhost:$check_port/api/tunnels" | grep -o '"public_url":"https://[^"]*' | head -n1 | cut -d'"' -f4)
-                        if [ -n "$url" ]; then
-                            break
-                        fi
-                    fi
-                done
+            if [[ -n "$TUNNEL_URL" ]]; then
+                print_success "Cloudflare tunnel established at: $TUNNEL_URL"
+                
+                # Step 7: Show download instructions
+                print_header "DOWNLOAD INSTRUCTIONS"
+                echo -e "${GREEN}Download your swarm.pem file using this command:${NC}"
+                echo -e "wget -O swarm.pem ${TUNNEL_URL}/swarm.pem"
+                echo
+                echo -e "${GREEN}Similar for these 2 files as well:${NC}"
+                echo -e "wget -O userData.json ${TUNNEL_URL}/modal-login/temp-data/userData.json"
+                echo -e "wget -O userApiKey.json ${TUNNEL_URL}/modal-login/temp-data/userApiKey.json"
+                
+                SERVER_STARTED=true
+            else
+                print_error "Failed to establish cloudflared tunnel. Stopping services and trying another port."
+                
+                # Cleanup
+                kill $HTTP_SERVER_PID 2>/dev/null
+                kill $CLOUDFLARED_PID 2>/dev/null
+                
+                PORT=$((PORT + 1))
+                RETRY_COUNT=$((RETRY_COUNT + 1))
             fi
-            
-            echo "$url"
-        }
-
-        # Start ngrok with default configuration first
-        sudo ngrok http "$PORT" --log=stdout --log-format=json --log-level=info > ngrok_output.log 2>&1 &
-        NGROK_PID=$!
-        sleep 5
-
-        # Try all methods in sequence  
-        echo -e "\n${PURPLE}Trying method 1...${NC}"
-        FORWARDING_URL=$(get_url_from_method1)
-        
-        if [ -z "$FORWARDING_URL" ]; then
-            echo -e "\n${PURPLE}Method 1 failed. Trying method 2...${NC}"
-            FORWARDING_URL=$(get_url_from_method2)
         fi
-        
-        if [ -z "$FORWARDING_URL" ]; then
-            echo -e "\n${PURPLE}Method 2 failed. Trying method 3...${NC}"
-            FORWARDING_URL=$(get_url_from_method3)
-        fi
-        
-        if [ -z "$FORWARDING_URL" ]; then
-            echo -e "\n${PURPLE}Method 3 failed. Trying method 4...${NC}"
-            FORWARDING_URL=$(get_url_from_method4)
-        fi
-    fi
-
-    if [ -n "$FORWARDING_URL" ]; then
-        echo -e "${GREEN}${BOLD}✓ Success! Please visit this website and log in using your email:${NC} ${CYAN}${BOLD}${FORWARDING_URL}${NC}"
     else
-        echo -e "\n${BLUE}Don't worry, you can use this manual method. Please follow these instructions:${NC}"
-        echo "1. Open Command Prompt on your PC."
-        echo -e "2. Paste this command into Command Prompt: ssh -L 3000:localhost:$PORT $(whoami)@$(curl -s ifconfig.me)"
-        echo "3. After connecting, visit this website and log in using your email: http://localhost:3000/"
-        echo "4. Please note that the website may take up to 1 minute to be fully ready."
-        sudo kill $NGROK_PID 2>/dev/null || true
+        # HTTP server failed to start, try the next port
+        PORT=$((PORT + 1))
+        RETRY_COUNT=$((RETRY_COUNT + 1))
     fi
+done
 
-    cd ..
-    echo -e "\n${CYAN}Waiting for you to complete the login process...${NC}"
-    while [ ! -f "modal-login/temp-data/userData.json" ]; do
-        sleep 3
-    done
-    echo -e "${GREEN}${BOLD}✓ Success! The userData.json file has been created. Proceeding with remaining setups...${NC}"
-
-    # Extract ORG_ID from userData.json
-    ORG_ID=$(awk 'BEGIN { FS = "\"" } !/^[ \t]*[{}]/ { print $(NF - 1); exit }' modal-login/temp-data/userData.json)
-    echo -e "\n${CYAN}ORG_ID has been set to: ${BOLD}$ORG_ID\n${NC}"
-
-    echo -e "${CYAN}Waiting for API key to become activated...${NC}"
-    while true; do
-        STATUS=$(curl -s "http://localhost:3000/api/get-api-key-status?orgId=$ORG_ID")
-        if [[ "$STATUS" == "activated" ]]; then
-            echo -e "${GREEN}${BOLD}✓ Success! API key is activated! Proceeding...\n${NC}"
-            break
-        else
-            echo -e "${YELLOW}Waiting for API key to be activated...${NC}"
-            sleep 5
-        fi
-    done
-
-    # Cleanup function for graceful shutdown
-    cleanup() {
-        echo -e "${YELLOW}Shutting down server and ngrok processes...${NC}"
-        kill $SERVER_PID 2>/dev/null || true
-        sudo kill $NGROK_PID 2>/dev/null || true
-        exit 0
-    }
-
-    trap cleanup INT
+if [[ $SERVER_STARTED == false ]]; then
+    print_error "Failed to start HTTP server after $MAX_RETRIES attempts."
+    exit 1
 fi
 
-# Install Python requirements
-echo -e "${CYAN}Installing required Python packages...${NC}"
-pip install -r "$ROOT"/requirements-hivemind.txt > /dev/null
-pip install -r "$ROOT"/requirements.txt > /dev/null
+print_header "SETUP COMPLETE"
+print_success "Server running at http://localhost:$PORT"
+print_success "Press Ctrl+C to stop the server when you're done."
 
-# Determine config path based on hardware
-if ! which nvidia-smi; then
-    CONFIG_PATH="$ROOT/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml"
-elif [ -n "$CPU_ONLY" ]; then
-    CONFIG_PATH="$ROOT/hivemind_exp/configs/mac/grpo-qwen-2.5-0.5b-deepseek-r1.yaml"
-else
-    pip install -r "$ROOT"/requirements_gpu.txt > /dev/null
-    CONFIG_PATH="$ROOT/hivemind_exp/configs/gpu/grpo-qwen-2.5-0.5b-deepseek-r1.yaml"
-fi
-
-echo -e "${GREEN}>>> Awesome, All packages installed successfully!\n${NC}"
-
-# Handle Hugging Face token
-if [ -n "${HF_TOKEN}" ]; then
-    HUGGINGFACE_ACCESS_TOKEN=${HF_TOKEN}
-else
-    read -p "Would you like to push models you train in the RL swarm to the Hugging Face Hub? [y/N] " yn
-    yn=${yn:-N}
-    case $yn in
-        [Yy]* ) read -p "Enter your Hugging Face access token: " HUGGINGFACE_ACCESS_TOKEN;;
-        [Nn]* ) HUGGINGFACE_ACCESS_TOKEN="None";;
-        * ) echo -e "${YELLOW}>>> No answer was given, so NO models will be pushed to the Hugging Face Hub.${NC}" && HUGGINGFACE_ACCESS_TOKEN="None";;
-    esac
-fi
-
-echo -e "\n${GREEN}${BOLD}Good luck in the swarm! Your training session is about to begin.\n${NC}"
-
-# Run the Python training script with appropriate parameters
-if [ -n "$ORG_ID" ]; then
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --modal_org_id "$ORG_ID" \
-        --config "$CONFIG_PATH"
-else
-    python -m hivemind_exp.gsm8k.train_single_gpu \
-        --hf_token "$HUGGINGFACE_ACCESS_TOKEN" \
-        --identity_path "$IDENTITY_PATH" \
-        --public_maddr "$PUB_MULTI_ADDRS" \
-        --initial_peers "$PEER_MULTI_ADDRS" \
-        --host_maddr "$HOST_MULTI_ADDRS" \
-        --config "$CONFIG_PATH"
-fi
-
+# Wait for Ctrl+C
+trap "echo -e '${YELLOW}Stopping servers...${NC}'; kill $HTTP_SERVER_PID 2>/dev/null; kill $CLOUDFLARED_PID 2>/dev/null; echo -e '${GREEN}Servers stopped.${NC}'" INT
 wait
